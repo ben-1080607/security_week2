@@ -13,7 +13,7 @@ class Testgtp:
 
     def get_cursor(self):
         "Connects to the database"
-        connection = sqlite3.connect('databases/testgpt.db')
+        connection = sqlite3.connect('wp2-2023-mvc-1c1-gewoonsimpel/databases/testgpt.db')
         cursor = connection.cursor()
         cursor.row_factory = sqlite3.Row
         return cursor
@@ -224,7 +224,7 @@ class Testgtp:
 
     
     def get_teachers(self):
-        connection = sqlite3.connect('databases/testgpt.db')
+        connection = sqlite3.connect('wp2-2023-mvc-1c1-gewoonsimpel/databases/testgpt.db')
         cursor = connection.cursor()
         cursor.execute("SELECT teacher_id, display_name FROM teachers")
         teachers = cursor.fetchall()

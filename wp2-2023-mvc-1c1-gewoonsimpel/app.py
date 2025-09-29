@@ -1,6 +1,7 @@
 from flask import Flask, redirect, url_for, render_template, request, session
 import sqlite3
 import openai
+import hashlib, os
 from lib.sqlite_queries import Testgtp
 from lib.testgpt.testgpt import FakeTestGPT, TestGPT
 from secret import OPENAI_LICENSE
@@ -8,16 +9,29 @@ from secret import OPENAI_LICENSE
 app = Flask(__name__, static_url_path='/static')
 app.secret_key = 'WP2'
 
-DATABASE_FILE = "databases/testgpt.db"
+DATABASE_FILE = "wp2-2023-mvc-1c1-gewoonsimpel/databases/testgpt.db"
 sqlite_queries = Testgtp(DATABASE_FILE)
 
 
 def connect_db():
-    return sqlite3.connect('databases/testgpt.db', check_same_thread=False)
+    return sqlite3.connect('wp2-2023-mvc-1c1-gewoonsimpel/databases/testgpt.db', check_same_thread=False)
 
 
 def is_valid_email(email):
     return '@' in email
+
+def hash_password(password):
+    salt = os.urandom(16)
+    salted = salt + password.encode()
+    hashed = hashlib.sha256(salted).hexdigest()
+    return salt.hex() + ":" + hashed
+
+def check_password(stored_password, entered_password):
+    salt_hex, stored_hash = stored_password.split(":")
+    salt = bytes.fromhex(salt_hex)
+    new_hash = hashlib.sha256(salt + entered_password.encode()).hexdigest()
+    print(stored_password)
+    return new_hash == stored_hash
 
 
 @app.route('/', methods=['GET', 'POST'])
@@ -31,23 +45,22 @@ def login():
             input_value = request.form["username"]
             password = request.form["password"]
 
-            if is_valid_email(input_value):
-                # Invoer is e-mailadres
-                query = "SELECT teacher_id, is_admin username, teacher_password FROM teachers WHERE email = ? AND teacher_password = ?"
-            else:
-                # Invoer is gebruikersnaam
-                query = "SELECT teacher_id, is_admin, username, teacher_password FROM teachers WHERE username = ? AND teacher_password = ?"
-
-            cursor.execute(query, (input_value, password))
+            # Invoer is e-mailadres
+            query = """SELECT teacher_id, is_admin, username, teacher_password 
+                    FROM teachers WHERE email = ? OR username = ?"""
+            cursor.execute(query, (input_value, input_value))
             result = cursor.fetchone()
 
             if result is None:
                 error_message = "Inloggegevens incorrect. De combinatie van het opgegeven e-mailadres en wachtwoord klopt niet, of er bestaat geen account met dit e-mailadres."
             else:
-                # Opslaan van teacher_id in sessie
-                session['user_id'] = result[0]
-                session['is_admin'] = result[1]
-                return redirect(url_for('notities_lijst', user_id=session['user_id']))
+                if check_password(result[3], password):
+                    # Opslaan van teacher_id in sessie
+                    session['user_id'] = result[0]
+                    session['is_admin'] = result[1]
+                    return redirect(url_for('notities_lijst', user_id=session['user_id']))
+                else:
+                    error_message = "Inloggegevens incorrect. De combinatie van het opgegeven e-mailadres en wachtwoord klopt niet, of er bestaat geen account met dit e-mailadres."
 
         except sqlite3.Error as e:
             print("SQLite error:", e)
@@ -339,7 +352,7 @@ def haal_gebruikersgegevens_op():
     if 'user_id' in session:
         user_id = session['user_id']
 
-        connection = sqlite3.connect('databases/testgpt.db')
+        connection = sqlite3.connect('wp2-2023-mvc-1c1-gewoonsimpel/databases/testgpt.db')
         cursor = connection.cursor()
 
         cursor.execute('''
@@ -376,7 +389,7 @@ def update_user():
     if 'user_id' in session:
         user_id = session['user_id']
 
-        connection = sqlite3.connect('databases/testgpt.db')
+        connection = sqlite3.connect('wp2-2023-mvc-1c1-gewoonsimpel/databases/testgpt.db')
         cursor = connection.cursor()
 
         new_email = request.form['new_email']
@@ -445,10 +458,15 @@ def add_teacher():
         display_name = request.form.get('display_name')
         username = request.form.get('username')
         email = request.form.get('email')
+        
+        #Wachtwoord hash
         password = request.form.get('password')
+        hashed_password = hash_password(password)
+
         is_admin = int(request.form.get('is_admin', 0))
         sqlite_queries = Testgtp(DATABASE_FILE)
-        sqlite_queries.insert_teacher(display_name, username, email, password, is_admin)
+
+        sqlite_queries.insert_teacher(display_name, username, email, hashed_password, is_admin)
 
     return redirect(url_for('admin'))
 
@@ -468,11 +486,15 @@ def edit_teacher(teacher_id):
         new_display_name = request.form['new_display_name']
         new_username = request.form['new_username']
         new_email = request.form['new_email']
+        #Wachtwoord hash
         new_password = request.form['new_password']
+        new_hashed_password = hash_password(new_password)
+
         is_admin = 'is_admin' in request.form
 
 
-        sqlite_queries.update_teacher(teacher_id, new_display_name, new_username, new_email, new_password, is_admin)
+        sqlite_queries.update_teacher(teacher_id, new_display_name, new_username, new_email, 
+                                      new_hashed_password, is_admin)
 
         return redirect(url_for('admin'))
     
